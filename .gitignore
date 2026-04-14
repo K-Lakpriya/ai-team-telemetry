@@ -1,0 +1,7 @@
+.env
+grafana/data/
+prometheus/data/
+loki/data/
+caddy/data/
+caddy/config/
+*.bak
