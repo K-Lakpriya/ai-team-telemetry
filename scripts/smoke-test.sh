@@ -46,7 +46,7 @@ check "Grafana health" \
 
 # 5. Prometheus can scrape otel-collector metrics
 check "Prometheus scrapes OTEL Collector" \
-  "curl -sf 'http://localhost:9090/api/v1/query?query=up{job=\"otel-collector\"}' | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d['data']['result'][0]['value'][1])\"" \
+  "curl -sf 'http://localhost:9090/api/v1/query?query=up{job=\"otel-collector\"}' | python3 -c \"import sys,json; d=json.load(sys.stdin); r=d['data']['result']; print(r[0]['value'][1] if r else 'no_data')\"" \
   "1"
 
 # 6. Grafana datasources provisioned

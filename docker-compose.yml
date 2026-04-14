@@ -14,6 +14,8 @@ services:
     environment:
       - VPS_DOMAIN=${VPS_DOMAIN}
       - CADDY_EMAIL=${CADDY_EMAIL}
+    networks:
+      - monitor
     restart: unless-stopped
 
   otel-collector:
@@ -28,6 +30,8 @@ services:
     depends_on:
       - prometheus
       - loki
+    networks:
+      - monitor
     restart: unless-stopped
 
   prometheus:
@@ -45,6 +49,8 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
     ports:
       - "127.0.0.1:9090:9090"  # Prometheus UI + API (localhost only)
+    networks:
+      - monitor
     restart: unless-stopped
 
   loki:
@@ -53,6 +59,9 @@ services:
       - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
+    user: "0"
+    networks:
+      - monitor
     ports:
       - "127.0.0.1:3100:3100"  # Loki API (localhost only)
     restart: unless-stopped
@@ -73,6 +82,8 @@ services:
     depends_on:
       - prometheus
       - loki
+    networks:
+      - monitor
     restart: unless-stopped
 
 volumes:
@@ -81,3 +92,7 @@ volumes:
   prometheus_data:
   loki_data:
   grafana_data:
+
+networks:
+  monitor:
+    driver: bridge
