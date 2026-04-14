@@ -1,0 +1,14 @@
+{
+    email {$CADDY_EMAIL}
+}
+
+# Grafana — HTTPS on port 443 (default)
+{$VPS_DOMAIN} {
+    reverse_proxy grafana:3000
+}
+
+# OTEL Collector — gRPC/TLS on port 4317
+# h2c:// = cleartext HTTP/2 to internal collector (TLS terminated by Caddy)
+{$VPS_DOMAIN}:4317 {
+    reverse_proxy h2c://otel-collector:4317
+}
