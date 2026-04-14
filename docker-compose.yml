@@ -53,7 +53,6 @@ services:
       - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
-    user: "0"
     ports:
       - "127.0.0.1:3100:3100"  # Loki API (localhost only)
     restart: unless-stopped
