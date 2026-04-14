@@ -1,0 +1,70 @@
+extensions:
+  # Server-side bearer token validation for all OTLP receivers
+  bearertokenauth:
+    token: "${OTEL_BEARER_TOKEN}"
+
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 75
+    spike_limit_percentage: 20
+
+  # If developer.name resource attribute is absent, fall back to host.name
+  transform/developer_fallback:
+    metric_statements:
+      - context: resource
+        statements:
+          - 'set(attributes["developer.name"], attributes["host.name"]) where attributes["developer.name"] == nil'
+    log_statements:
+      - context: resource
+        statements:
+          - 'set(attributes["developer.name"], attributes["host.name"]) where attributes["developer.name"] == nil'
+
+  # Mark which resource attributes become Loki stream labels
+  transform/loki_labels:
+    log_statements:
+      - context: resource
+        statements:
+          - 'set(attributes["loki.resource.labels"], "developer.name,model")'
+
+  batch:
+    timeout: 10s
+    send_batch_size: 1000
+
+exporters:
+  prometheusremotewrite:
+    endpoint: "http://prometheus:9090/api/v1/write"
+    tls:
+      insecure: true
+    # Copies all OTEL resource attributes as Prometheus labels
+    # developer.name → developer_name, host.name → host_name, etc.
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  loki:
+    endpoint: "http://loki:3100/loki/api/v1/push"
+    tls:
+      insecure: true
+
+service:
+  extensions: [bearertokenauth, health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/developer_fallback, batch]
+      exporters: [prometheusremotewrite]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/developer_fallback, transform/loki_labels, batch]
+      exporters: [loki]
