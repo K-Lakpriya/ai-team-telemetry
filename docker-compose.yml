@@ -23,8 +23,8 @@ services:
     environment:
       - OTEL_BEARER_TOKEN=${OTEL_BEARER_TOKEN}
     ports:
-      - "127.0.0.1:8888:8888"
-      - "127.0.0.1:13133:13133"
+      - "127.0.0.1:8888:8888"    # collector self-metrics (localhost only)
+      - "127.0.0.1:13133:13133"  # health check endpoint (localhost only)
     depends_on:
       - prometheus
       - loki
@@ -44,7 +44,7 @@ services:
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
     ports:
-      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:9090:9090"  # Prometheus UI + API (localhost only)
     restart: unless-stopped
 
   loki:
@@ -55,7 +55,7 @@ services:
     command: -config.file=/etc/loki/local-config.yaml
     user: "0"
     ports:
-      - "127.0.0.1:3100:3100"
+      - "127.0.0.1:3100:3100"  # Loki API (localhost only)
     restart: unless-stopped
 
   grafana:
@@ -70,7 +70,7 @@ services:
       - GF_SERVER_ROOT_URL=https://${VPS_DOMAIN}
       - GF_USERS_ALLOW_SIGN_UP=false
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3000:3000"  # Grafana (localhost only — public access via Caddy/443)
     depends_on:
       - prometheus
       - loki
