@@ -18,7 +18,7 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(claude_code_api_usage_total, developer_name)",
+        "definition": "label_values(claude_code_token_usage_tokens_total, developer_name)",
         "hide": 0,
         "includeAll": true,
         "allValue": ".*",
@@ -26,7 +26,7 @@
         "name": "developer",
         "label": "Developer",
         "query": {
-          "query": "label_values(claude_code_api_usage_total, developer_name)",
+          "query": "label_values(claude_code_token_usage_tokens_total, developer_name)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
@@ -36,7 +36,7 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(claude_code_api_usage_total, model)",
+        "definition": "label_values(claude_code_token_usage_tokens_total, model)",
         "hide": 0,
         "includeAll": true,
         "allValue": ".*",
@@ -44,7 +44,7 @@
         "name": "model",
         "label": "Model",
         "query": {
-          "query": "label_values(claude_code_api_usage_total, model)",
+          "query": "label_values(claude_code_token_usage_tokens_total, model)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
@@ -71,7 +71,7 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sum(increase(claude_code_cost_usage_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range]))",
+        "expr": "sum(increase(claude_code_cost_usage_USD_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range]))",
         "legendFormat": "Total Cost",
         "refId": "A",
         "instant": true
@@ -94,7 +94,7 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sum(increase(claude_code_cost_usage_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range])) / count(count by (developer_name) (claude_code_api_usage_total{developer_name=~\"$developer\"}))",
+        "expr": "sum(increase(claude_code_cost_usage_USD_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range])) / count(count by (developer_name) (claude_code_token_usage_tokens_total{developer_name=~\"$developer\"}))",
         "legendFormat": "Avg per Dev",
         "refId": "A",
         "instant": true
@@ -115,12 +115,12 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sum(increase(claude_code_api_usage_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range]))",
-        "legendFormat": "Requests",
+        "expr": "sum(increase(claude_code_token_usage_tokens_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range]))",
+        "legendFormat": "Tokens",
         "refId": "A",
         "instant": true
       }],
-      "title": "Total API Requests",
+      "title": "Total Tokens Used",
       "type": "stat"
     },
     {
@@ -136,7 +136,7 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "topk(1, sum by (developer_name) (increase(claude_code_cost_usage_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range])))",
+        "expr": "topk(1, sum by (developer_name) (increase(claude_code_cost_usage_USD_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range])))",
         "legendFormat": "{{developer_name}}",
         "refId": "A",
         "instant": true
@@ -162,7 +162,7 @@
       },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sum by (developer_name) (increase(claude_code_cost_usage_total{developer_name=~\"$developer\",model=~\"$model\"}[1h]))",
+        "expr": "sum by (developer_name) (increase(claude_code_cost_usage_USD_total{developer_name=~\"$developer\",model=~\"$model\"}[1h]))",
         "legendFormat": "{{developer_name}}",
         "refId": "A"
       }],
@@ -189,7 +189,7 @@
       },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sort_desc(sum by (developer_name) (increase(claude_code_cost_usage_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range])))",
+        "expr": "sort_desc(sum by (developer_name) (increase(claude_code_cost_usage_USD_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range])))",
         "legendFormat": "{{developer_name}}",
         "refId": "A",
         "instant": true
@@ -211,7 +211,7 @@
       },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sum by (model) (increase(claude_code_cost_usage_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range]))",
+        "expr": "sum by (model) (increase(claude_code_cost_usage_USD_total{developer_name=~\"$developer\",model=~\"$model\"}[$__range]))",
         "legendFormat": "{{model}}",
         "refId": "A",
         "instant": true
@@ -237,7 +237,7 @@
       },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sum by (developer_name) (increase(claude_code_cost_usage_total{developer_name=~\"$developer\",model=~\"$model\"}[1d]))",
+        "expr": "sum by (developer_name) (increase(claude_code_cost_usage_USD_total{developer_name=~\"$developer\",model=~\"$model\"}[1d]))",
         "legendFormat": "{{developer_name}}",
         "refId": "A"
       }],

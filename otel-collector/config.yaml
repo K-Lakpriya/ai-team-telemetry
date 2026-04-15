@@ -38,6 +38,11 @@ processors:
         statements:
           - 'set(attributes["loki.resource.labels"], "developer.name,model")'
 
+  # Claude Code emits Sum metrics with delta temporality; the
+  # prometheusremotewrite exporter only accepts cumulative, so convert here.
+  deltatocumulative:
+    max_stale: 24h
+
   batch:
     timeout: 10s
     send_batch_size: 1000
@@ -62,7 +67,7 @@ service:
   pipelines:
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, transform/developer_fallback, batch]
+      processors: [memory_limiter, transform/developer_fallback, deltatocumulative, batch]
       exporters: [prometheusremotewrite]
     logs:
       receivers: [otlp]

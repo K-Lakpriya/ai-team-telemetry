@@ -18,14 +18,14 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(claude_code_api_usage_total, developer_name)",
+        "definition": "label_values(claude_code_token_usage_tokens_total, developer_name)",
         "hide": 0,
         "includeAll": true,
         "allValue": ".*",
         "multi": true,
         "name": "developer",
         "label": "Developer",
-        "query": { "query": "label_values(claude_code_api_usage_total, developer_name)", "refId": "StandardVariableQuery" },
+        "query": { "query": "label_values(claude_code_token_usage_tokens_total, developer_name)", "refId": "StandardVariableQuery" },
         "refresh": 2,
         "sort": 1,
         "type": "query"
@@ -66,7 +66,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (developer_name) (increase(claude_code_token_usage_total{developer_name=~\"$developer\",type=\"input\"}[$__range]))",
+          "expr": "sum by (developer_name) (increase(claude_code_token_usage_tokens_total{developer_name=~\"$developer\",type=\"input\"}[$__range]))",
           "legendFormat": "{{developer_name}}",
           "refId": "A",
           "instant": true,
@@ -74,7 +74,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (developer_name) (increase(claude_code_token_usage_total{developer_name=~\"$developer\",type=\"output\"}[$__range]))",
+          "expr": "sum by (developer_name) (increase(claude_code_token_usage_tokens_total{developer_name=~\"$developer\",type=\"output\"}[$__range]))",
           "legendFormat": "{{developer_name}}",
           "refId": "B",
           "instant": true,
@@ -82,7 +82,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (developer_name) (increase(claude_code_token_usage_total{developer_name=~\"$developer\",type=\"input\"}[$__range])) / sum by (developer_name) (increase(claude_code_token_usage_total{developer_name=~\"$developer\",type=\"output\"}[$__range]))",
+          "expr": "sum by (developer_name) (increase(claude_code_token_usage_tokens_total{developer_name=~\"$developer\",type=\"input\"}[$__range])) / sum by (developer_name) (increase(claude_code_token_usage_tokens_total{developer_name=~\"$developer\",type=\"output\"}[$__range]))",
           "legendFormat": "{{developer_name}}",
           "refId": "C",
           "instant": true,
@@ -124,7 +124,7 @@
       },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sum by (developer_name) (rate(claude_code_api_usage_total{developer_name=~\"$developer\",model=~\".*opus.*\"}[1h])) / sum by (developer_name) (rate(claude_code_api_usage_total{developer_name=~\"$developer\"}[1h])) * 100",
+        "expr": "sum by (developer_name) (rate(claude_code_token_usage_tokens_total{developer_name=~\"$developer\",model=~\".*opus.*\"}[1h])) / sum by (developer_name) (rate(claude_code_token_usage_tokens_total{developer_name=~\"$developer\"}[1h])) * 100",
         "legendFormat": "{{developer_name}}",
         "refId": "A",
         "instant": true
@@ -153,7 +153,7 @@
       },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sum by (developer_name) (rate(claude_code_api_usage_total{developer_name=~\"$developer\",model=~\".*opus.*\"}[1h])) / sum by (developer_name) (rate(claude_code_api_usage_total{developer_name=~\"$developer\"}[1h])) * 100",
+        "expr": "sum by (developer_name) (rate(claude_code_token_usage_tokens_total{developer_name=~\"$developer\",model=~\".*opus.*\"}[1h])) / sum by (developer_name) (rate(claude_code_token_usage_tokens_total{developer_name=~\"$developer\"}[1h])) * 100",
         "legendFormat": "{{developer_name}}",
         "refId": "A"
       }],
