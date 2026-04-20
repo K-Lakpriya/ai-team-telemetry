@@ -1,87 +1,197 @@
-# aimonitor
+# ai-team-telemetry
 
-Self-hosted observability stack for monitoring Claude Code usage across a team: per-developer cost, tokens, and session activity, fed via OpenTelemetry into Prometheus + Loki and visualised in Grafana.
+Open-source telemetry stack for monitoring AI tool usage across development teams. Track per-developer cost, token usage, session activity, and efficiency signals with Prometheus, Loki, and Grafana.
 
-This repo is infrastructure and config — no application code. Everything is driven by `docker-compose.yml`, `docker-compose.local.yml`, and the `Justfile`. Local dev and production run the **same** compose file; only `.env` values and an optional local override distinguish them.
+`ai-team-telemetry` is built for CTOs, engineering managers, and dev team leads who want a self-hosted way to understand how AI coding tools are being used across a team without sending telemetry to another SaaS dashboard.
+
+The project is experimental but usable today. Claude Code is the first supported integration. Codex and opencode support are planned next, with more AI agentic tools to follow.
+
+## Why Use It
+
+- **Track cost by developer and team**: see where AI spend is going instead of treating usage as a monthly black box.
+- **Understand token usage**: monitor input, output, cache, and total token patterns across sessions.
+- **Spot waste and efficiency issues**: identify expensive workflows, repeated activity, and model usage patterns that need attention.
+- **Keep telemetry self-hosted**: run the stack on your own laptop, VPS, or internal infrastructure.
+- **Use boring, proven observability tools**: OpenTelemetry in, Prometheus and Loki for storage, Grafana for dashboards.
+
+## What It Includes
+
+This repository is infrastructure and configuration, not an application codebase. The stack is driven by Docker Compose and `just` recipes.
+
+- **Caddy** for TLS termination and routing.
+- **OpenTelemetry Collector** for authenticated OTLP/gRPC ingestion.
+- **Prometheus** for metrics storage.
+- **Loki** for log storage.
+- **Grafana** for file-provisioned dashboards.
+
+Current dashboards cover cost, daily usage, waste, and efficiency. They are provisioned from `grafana/dashboards/` and tagged for Claude Code telemetry today.
+
+## Supported Tools
+
+| Tool | Status |
+|---|---|
+| Claude Code | Supported today |
+| Codex | Planned |
+| opencode | Planned |
+| More AI agentic tools | Future roadmap |
+
+The ingestion path is OpenTelemetry-first. New tools should integrate by emitting compatible OTLP metrics and logs with stable resource attributes such as developer and team identity.
 
 ## Architecture
 
-```
-Dev machines (Claude Code + OTEL SDK)
-        │ OTLP/gRPC :4317 (bearer-token auth, TLS)
-        ▼
-       Caddy  ──────► OTel Collector ──► Prometheus (metrics, 14d)
-        │                              └─► Loki        (logs, 120h)
-        │ HTTPS :443
-        ▼
-      Grafana (file-provisioned dashboards tagged `claude-code`)
+```text
+Developer machines
+Claude Code today, more tools later
+        |
+        | OTLP/gRPC :4317
+        | Bearer token auth + TLS
+        v
+      Caddy
+        |
+        | h2c
+        v
+OpenTelemetry Collector
+        |
+        +--> Prometheus metrics
+        |
+        +--> Loki logs
+
+Grafana reads from Prometheus + Loki
 ```
 
-Services: **caddy**, **otel-collector**, **prometheus**, **loki**, **grafana**.
+Local development and production use the same base compose file. Local development adds an explicit override for local-only TLS and debug ports; production runs the base stack behind real DNS and Let's Encrypt certificates.
 
 ## Prerequisites
 
-- Docker + `docker compose` plugin
+- Docker with the `docker compose` plugin
 - [`just`](https://github.com/casey/just)
-- `curl`, `jq`, `openssl`, `python3` (for `just smoke`)
+- `curl`, `jq`, `openssl`, and `python3` for smoke testing
 
----
+## Quick Start: Local
 
-## Local setup (macOS laptop)
+Local setup uses `aimonitor.local` and Caddy's internal TLS CA.
 
-1. Clone the repo and `cd` into it.
-2. `just setup` — creates `.env` from `.env.example` and warns if `/etc/hosts` is missing the entry.
-3. Edit `.env`:
-   - `VPS_DOMAIN=aimonitor.local`
-   - `CADDY_EMAIL=dev@localhost`
-   - `OTEL_BEARER_TOKEN=` ← paste from `just token`
-   - `GF_SECURITY_ADMIN_PASSWORD=admin`
-4. Add hosts entry:
+1. Clone the repository and enter it:
+
+   ```bash
+   git clone https://github.com/<your-org>/ai-team-telemetry.git
+   cd ai-team-telemetry
+   ```
+
+2. Create the local environment file:
+
+   ```bash
+   just setup
+   ```
+
+3. Generate a bearer token:
+
+   ```bash
+   just token
+   ```
+
+4. Edit `.env`:
+
+   ```dotenv
+   VPS_DOMAIN=aimonitor.local
+   CADDY_EMAIL=dev@localhost
+   OTEL_BEARER_TOKEN=<paste-token-from-just-token>
+   GF_SECURITY_ADMIN_USER=admin
+   GF_SECURITY_ADMIN_PASSWORD=admin
+   ```
+
+5. Add the local host entry:
+
    ```bash
    echo '127.0.0.1   aimonitor.local' | sudo tee -a /etc/hosts
    ```
-5. `just up` — starts the full stack with `tls internal`.
-6. `curl -sk https://aimonitor.local/api/health` — triggers Caddy to generate its internal CA.
-7. `just trust-cert` — installs the CA into the macOS System keychain (sudo prompt) and prints a `NODE_EXTRA_CA_CERTS` line.
-8. Add the printed line to `~/.zshrc`, then `exec zsh`.
-9. `just smoke` — expect **10/10 passed**.
-10. Point Claude Code at it:
+
+6. Start the stack:
+
+   ```bash
+   just up
+   ```
+
+7. Trigger Caddy's local CA generation:
+
+   ```bash
+   curl -sk https://aimonitor.local/api/health
+   ```
+
+8. Trust the local CA on macOS:
+
+   ```bash
+   just trust-cert
+   ```
+
+   Add the printed `NODE_EXTRA_CA_CERTS` line to your shell profile. Node.js does not read the macOS System keychain, so Claude Code needs this environment variable for local TLS.
+
+9. Run the smoke test:
+
+   ```bash
+   just smoke
+   ```
+
+10. Open Grafana:
+
     ```bash
-    export OTEL_EXPORTER_OTLP_ENDPOINT=https://aimonitor.local:4317
+    just open
     ```
-    Plus the other `CLAUDE_CODE_ENABLE_TELEMETRY=1` and bearer-auth headers — see [Client configuration](#client-configuration-claude-code) below.
 
-**Access:** `just open` (Grafana via Caddy) or `http://localhost:3000` direct.
+Grafana is also available directly at `http://localhost:3000` in local development.
 
----
+## Production: VPS
 
-## Production setup (VPS)
+Production is designed for a single VPS with DNS pointing at the host.
 
-1. Point DNS: `A` record `monitor.yourdomain.com` → VPS IP.
-2. On the VPS: install Docker + `docker-compose` plugin + `just`, then `git clone` the repo.
-3. `cd` in, then `just setup` — creates `.env`.
-4. Edit `.env`:
-   - `VPS_DOMAIN=monitor.yourdomain.com` (your real domain, must resolve to this VPS)
-   - `CADDY_EMAIL=you@yourdomain.com` (real email — Let's Encrypt contacts you for cert issues)
-   - `OTEL_BEARER_TOKEN=` ← paste from `just token` (use a strong token; share only with authorised clients)
-   - `GF_SECURITY_ADMIN_PASSWORD=<strong password>`
-5. Open firewall ports 80, 443, 4317 inbound:
+1. Create an `A` record such as `monitor.yourdomain.com` pointing to the VPS IP.
+2. Install Docker, the `docker compose` plugin, and `just`.
+3. Clone the repository on the VPS.
+4. Run setup:
+
+   ```bash
+   just setup
+   ```
+
+5. Edit `.env`:
+
+   ```dotenv
+   VPS_DOMAIN=monitor.yourdomain.com
+   CADDY_EMAIL=you@yourdomain.com
+   OTEL_BEARER_TOKEN=<strong-token-from-just-token>
+   GF_SECURITY_ADMIN_USER=admin
+   GF_SECURITY_ADMIN_PASSWORD=<strong-password>
+   ```
+
+6. Open the required inbound ports:
+
    ```bash
    ufw allow 80,443,4317/tcp
    ```
-6. `just up-prod` — starts base compose only; Caddy auto-requests Let's Encrypt certs for `:443` and `:4317`.
-7. `just ps` — confirm all 5 services running.
-8. `curl -sI https://monitor.yourdomain.com/api/health` — expect `HTTP/2 200` (cert valid, no `-k` needed).
-9. Point Claude Code clients at `https://monitor.yourdomain.com:4317` with the bearer token in `OTEL_EXPORTER_OTLP_HEADERS`.
 
-**Grafana UI:** `https://monitor.yourdomain.com` (Caddy-fronted).
-**SSH-tunnel Grafana admin debug:** `ssh -L 3000:127.0.0.1:3000 vps` then `http://localhost:3000`.
+7. Start the production stack:
 
----
+   ```bash
+   just up-prod
+   ```
 
-## Client configuration (Claude Code)
+8. Check service state:
 
-Each developer exports these in their shell profile. Replace `<ENDPOINT>` with `https://aimonitor.local:4317` locally or `https://monitor.yourdomain.com:4317` in prod, and `<TOKEN>` with the value of `OTEL_BEARER_TOKEN`.
+   ```bash
+   just ps
+   ```
+
+9. Verify Grafana health through Caddy:
+
+   ```bash
+   curl -sI https://monitor.yourdomain.com/api/health
+   ```
+
+Grafana is available at `https://monitor.yourdomain.com`. OTLP telemetry should be sent to `https://monitor.yourdomain.com:4317`.
+
+## Claude Code Client Configuration
+
+Each developer should export these values in their shell profile. Replace `<ENDPOINT>` with `https://aimonitor.local:4317` locally or `https://monitor.yourdomain.com:4317` in production. Replace `<TOKEN>` with `OTEL_BEARER_TOKEN`.
 
 ```bash
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
@@ -90,43 +200,66 @@ export OTEL_LOGS_EXPORTER=otlp
 export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 export OTEL_EXPORTER_OTLP_ENDPOINT=<ENDPOINT>
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <TOKEN>"
-export OTEL_RESOURCE_ATTRIBUTES="developer.name=<your-name>,team=myteam"
+export OTEL_RESOURCE_ATTRIBUTES="developer.name=<your-name>,team=<team-name>"
 ```
 
-Local only: also add the line printed by `just trust-cert`:
+For local development on macOS, also add the `NODE_EXTRA_CA_CERTS` line printed by:
 
 ```bash
-export NODE_EXTRA_CA_CERTS="/path/to/aimonitor/caddy-local-root.crt"
+just trust-cert
 ```
 
----
-
-## Common commands
+## Operating The Stack
 
 | Command | Purpose |
 |---|---|
 | `just` | List all recipes |
-| `just up` / `just up-prod` | Start stack (local / prod) |
-| `just down` | Stop stack (keep volumes) |
-| `just reset` | Stop stack and delete all data (destructive) |
-| `just reload` | Recreate containers after config changes |
-| `just ps` | Container health/state |
-| `just logs [service]` | Tail all logs, or one service |
-| `just ping` | Verify Caddy routing + TLS on `:443` and `:4317` |
-| `just smoke` | Full 10-check smoke test (local only) |
-| `just validate` | Validate configs without starting anything |
-| `just clean-data` | Wipe Prometheus + Loki data; keep Grafana users and Caddy CA |
+| `just setup` | Create `.env` from `.env.example` if needed |
 | `just token` | Generate a random bearer token |
-| `just trust-cert` | Install local Caddy CA into macOS keychain |
-| `just metrics` | List `claude_*` metric names from Prometheus |
+| `just up` | Start the local stack with the local override |
+| `just up-prod` | Start the production stack |
+| `just down` | Stop the stack and keep volumes |
+| `just reset` | Stop the stack and delete all data volumes |
+| `just reload` | Recreate containers after config changes |
+| `just ps` | Show container health and state |
+| `just logs [service]` | Tail all logs or one service |
+| `just ping` | Check Caddy routing and TLS on `:443` and `:4317` |
+| `just smoke` | Run the local smoke test |
+| `just validate` | Validate compose and collector configuration |
+| `just clean-data` | Wipe Prometheus and Loki data while keeping Grafana users and Caddy CA |
+| `just metrics` | List Claude-related metric names from Prometheus |
 
 ## Retention
 
-- Prometheus: **14d** or **80GB** (in `docker-compose.yml`)
-- Loki: **120h** (in `loki/loki-config.yaml`)
+- Prometheus: **14 days** or **80 GB**, configured in `docker-compose.yml`
+- Loki: **120 hours**, configured in `loki/loki-config.yaml`
 
-## Further reading
+## Configuration Notes
 
-- `AGENTS.md` — repo conventions, telemetry path quirks, Grafana provisioning rules.
-- `claude_code_monitoring_plan.md` — original monitoring goals and dashboard plan.
-- `docs/superpowers/specs/2026-04-20-local-prod-parity-design.md` — design for local/prod parity.
+- OTLP ingestion is exposed through Caddy on `:4317`.
+- The collector accepts OTLP/gRPC only; there is no OTLP/HTTP receiver.
+- Ingestion requires bearer-token authentication.
+- Metrics are exported from the collector to Prometheus through remote write.
+- Logs are exported from the collector to Loki.
+- Grafana datasources and dashboards are file-provisioned from `grafana/provisioning/` and `grafana/dashboards/`.
+
+## Roadmap
+
+- Add Codex telemetry support.
+- Add opencode telemetry support.
+- Generalize dashboards beyond Claude Code naming.
+- Document the integration contract for additional AI agentic tools.
+- Add project screenshots once dashboard visuals are ready.
+
+## Project Status
+
+This is an early open-source project. The current stack is usable for Claude Code telemetry and intentionally keeps the deployment model simple: Docker Compose, one domain, one OTLP endpoint, and standard observability components.
+
+## License
+
+Apache-2.0.
+
+## Further Reading
+
+- `AGENTS.md` for repo conventions and operational notes.
+- `docs/superpowers/specs/2026-04-20-local-prod-parity-design.md` for the local and production parity design.
