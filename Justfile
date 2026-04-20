@@ -136,8 +136,7 @@ open:
 prom:
     @open http://localhost:9090
 
-# Extract Caddy's local root CA and install it into the macOS System keychain.
-# Also prints the NODE_EXTRA_CA_CERTS snippet (Node.js does not read the keychain).
+# Extract Caddy's local root CA, install it into macOS System keychain, print NODE_EXTRA_CA_CERTS snippet
 trust-cert:
     #!/usr/bin/env bash
     set -e
