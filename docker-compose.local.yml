@@ -1,0 +1,27 @@
+# Local-dev override. Loaded only by `just up` (never by `docker compose up`
+# alone). On the VPS this file is present on disk but unreferenced, so prod
+# deploys with `docker compose up -d` are unaffected.
+#
+# Additions only — no existing base ports are replaced, so Docker Compose's
+# default list-concatenation merge is correct. Grafana's base :3000:3000
+# binding is reused; user manages port-3000 conflicts on the laptop.
+
+services:
+  caddy:
+    volumes:
+      - ./caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  prometheus:
+    ports:
+      - "127.0.0.1:9090:9090"  # Prometheus UI/API (local debug only)
+
+  loki:
+    ports:
+      - "127.0.0.1:3100:3100"  # Loki API (local debug only)
+
+  otel-collector:
+    ports:
+      - "127.0.0.1:8888:8888"   # collector self-metrics (local debug only)
+      - "127.0.0.1:13133:13133" # collector health check (local debug only)
