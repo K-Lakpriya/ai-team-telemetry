@@ -1,7 +1,7 @@
 # AI Monitor — Design Spec
 
-**Date:** 2026-04-14  
-**Status:** Approved  
+**Date:** 2026-04-14
+**Status:** Approved
 **Scope:** v1 — self-hosted Claude Code usage monitoring for a mid-sized team (6–20 devs)
 
 ---
@@ -46,7 +46,7 @@ export OTEL_LOGS_EXPORTER=otlp
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_VPS_DOMAIN:4317
 export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_TOKEN"
-export OTEL_RESOURCE_ATTRIBUTES="developer.name=<YOUR_NAME>,team=digis"
+export OTEL_RESOURCE_ATTRIBUTES="developer.name=<YOUR_NAME>,team=myteam"
 ```
 
 `developer.name` is optional — if unset, the OTEL Collector falls back to `host.name` (machine hostname). Team leads should encourage setting it explicitly for clarity.

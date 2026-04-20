@@ -11,9 +11,12 @@
 - Start/stop the local stack: `just up` (refuses non-`.local`/`.test` domains), `just down`, `just reset`
 - Start on the VPS: `just up-prod` (or plain `docker compose up -d`) — refuses local-looking `VPS_DOMAIN`
 - Recreate containers after config changes: `just reload`
+- Restart services: `just restart [service]` (no arg restarts all)
+- Pull latest images: `just pull`
 - Validate config without starting services: `just validate`
 - Smoke test (local only, after trust-cert): `just smoke`
 - Wipe only metric/log data (keep Grafana users + Caddy CA): `just clean-data`
+- List `claude_*` metric names from Prometheus: `just metrics` (requires `just up`)
 
 ## TLS Trust (Local Only)
 - After `just up` on the laptop, run `just trust-cert` once per Caddy CA regeneration. It installs Caddy's local root CA into the macOS System keychain (requires sudo) and prints a `NODE_EXTRA_CA_CERTS` snippet to add to your shell profile — Node.js does not read the system keychain, so Claude Code needs the env var.
@@ -28,8 +31,10 @@
 ## Telemetry Path Quirks
 - External OTLP traffic terminates at Caddy on `:4317` and is proxied as `h2c://otel-collector:4317`. Local dev uses `tls internal`; prod uses Let's Encrypt. The collector only exposes OTLP gRPC — no HTTP receiver.
 - If ingestion breaks, check both `caddy/Caddyfile`/`caddy/Caddyfile.local` (depending on env) and `otel-collector/config.yaml`.
-- The collector enforces bearer-token auth on OTLP ingest via `bearertokenauth`.
+- The collector enforces bearer-token auth on OTLP ingest via `bearertokenauth`. The token is interpolated from `.env` as `${OTEL_BEARER_TOKEN}` in `otel-collector/config.yaml`.
+- Collector processor pipeline order matters: `memory_limiter` → `transform/developer_fallback` → `deltatocumulative` → `batch` (metrics); `memory_limiter` → `transform/developer_fallback` → `transform/loki_labels` → `batch` (logs).
 - Metrics go from collector to Prometheus via `prometheusremotewrite`; Prometheus is not scraping app metrics directly. Do not add Claude/OpenTelemetry app metrics under `prometheus/prometheus.yml` unless the ingest architecture changes.
+- Claude Code emits Sum metrics with delta temporality; the `prometheusremotewrite` exporter only accepts cumulative, so `deltatocumulative` converts in the pipeline.
 - Logs are exported to Loki. `developer.name` falls back to `host.name` when absent; Loki stream labels come from `developer.name,model`.
 - Prometheus labels derive from OTEL resource attributes via `resource_to_telemetry_conversion`; dotted OTEL attributes become underscored labels.
 

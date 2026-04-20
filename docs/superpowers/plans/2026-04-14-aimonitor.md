@@ -1588,7 +1588,7 @@ export OTEL_LOGS_EXPORTER=otlp
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_VPS_DOMAIN:4317
 export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_TOKEN"
-export OTEL_RESOURCE_ATTRIBUTES="developer.name=yourname,team=digis"
+export OTEL_RESOURCE_ATTRIBUTES="developer.name=yourname,team=myteam"
 ```
 
 Reload shell (`source ~/.zshrc`), run Claude Code for a few minutes, then check:
@@ -1627,7 +1627,7 @@ export OTEL_LOGS_EXPORTER=otlp
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_VPS_DOMAIN:4317
 export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_BEARER_TOKEN"
-export OTEL_RESOURCE_ATTRIBUTES="developer.name=YOUR_NAME,team=digis"
+export OTEL_RESOURCE_ATTRIBUTES="developer.name=YOUR_NAME,team=myteam"
 ```
 
 `developer.name` is optional — if omitted, your machine hostname is used. Setting it explicitly is recommended for clear attribution in dashboards.

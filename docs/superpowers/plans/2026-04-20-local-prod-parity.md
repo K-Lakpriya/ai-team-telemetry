@@ -1178,7 +1178,7 @@ OTEL_LOGS_EXPORTER=otlp \
 OTEL_EXPORTER_OTLP_ENDPOINT=https://aimonitor.local:4317 \
 OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
 OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${OTEL_BEARER_TOKEN}" \
-OTEL_RESOURCE_ATTRIBUTES="developer.name=$(whoami),team=digis" \
+OTEL_RESOURCE_ATTRIBUTES="developer.name=$(whoami),team=myteam" \
 claude -p "hello"
 ```
 (`OTEL_BEARER_TOKEN` must be in your shell env; source `.env` if needed: `set -a && . ./.env && set +a`.)
