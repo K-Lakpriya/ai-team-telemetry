@@ -41,9 +41,19 @@ hosts-check:
 
 # ── Stack lifecycle ──────────────────────────────────────────────────────────
 
-# Start all services in the background
+# Start the local dev stack (base + local override). Refuses non-local VPS_DOMAIN.
 up:
-    docker compose up -d
+    #!/usr/bin/env bash
+    set -e
+    case "${VPS_DOMAIN:-}" in
+        *.local|*.test) ;;
+        *)
+            echo "ERROR: just up is for local dev only (VPS_DOMAIN='${VPS_DOMAIN}' must end in .local or .test)."
+            echo "Use 'just up-prod' on the VPS."
+            exit 1
+            ;;
+    esac
+    docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 
 # Start the prod stack (base compose only, no local override)
 # Intended for VPS deployment; aborts if VPS_DOMAIN looks like a local domain.
@@ -61,11 +71,11 @@ up-prod:
 
 # Stop all services (keeps volumes)
 down:
-    docker compose down
+    docker compose -f docker-compose.yml -f docker-compose.local.yml down
 
 # Stop all services and delete all data volumes (destructive!)
 reset:
-    docker compose down -v
+    docker compose -f docker-compose.yml -f docker-compose.local.yml down -v
 
 # Wipe Prometheus + Loki data volumes (keeps Grafana users/dashboards and Caddy CA)
 clean-data:
@@ -79,32 +89,32 @@ clean-data:
 restart service="":
     #!/usr/bin/env bash
     if [ -z "{{service}}" ]; then
-        docker compose restart
+        docker compose -f docker-compose.yml -f docker-compose.local.yml restart
     else
-        docker compose restart {{service}}
+        docker compose -f docker-compose.yml -f docker-compose.local.yml restart {{service}}
     fi
 
 # Pull latest images
 pull:
-    docker compose pull
+    docker compose -f docker-compose.yml -f docker-compose.local.yml pull
 
 # Rebuild and restart (useful after config changes)
 reload:
-    docker compose up -d --force-recreate
+    docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --force-recreate
 
 # ── Observability ────────────────────────────────────────────────────────────
 
 # Show running container status
 ps:
-    docker compose ps
+    docker compose -f docker-compose.yml -f docker-compose.local.yml ps
 
 # Follow logs for all services (or one: just logs grafana)
 logs service="":
     #!/usr/bin/env bash
     if [ -z "{{service}}" ]; then
-        docker compose logs -f --tail=50
+        docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f --tail=50
     else
-        docker compose logs -f --tail=100 {{service}}
+        docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f --tail=100 {{service}}
     fi
 
 # Run the smoke test (stack must be up)
@@ -118,9 +128,9 @@ metrics:
 
 # ── Local access ─────────────────────────────────────────────────────────────
 
-# Open Grafana in the browser (direct, bypasses Caddy)
+# Open Grafana via Caddy TLS (requires trust-cert + /etc/hosts entry)
 open:
-    @open http://localhost:3001
+    @open https://aimonitor.local
 
 # Open Prometheus UI (direct)
 prom:
@@ -165,21 +175,29 @@ trust-cert:
 
 # ── Dev helpers ──────────────────────────────────────────────────────────────
 
-# Send a synthetic OTEL metric to verify ingestion end-to-end
-# Requires OTEL_BEARER_TOKEN to be set in .env
+# Verify Caddy is routing + TLS handshake succeeds on both :443 and :4317
 ping:
     #!/usr/bin/env bash
-    TOKEN="${OTEL_BEARER_TOKEN:?OTEL_BEARER_TOKEN not set in .env}"
-    curl -sf -o /dev/null -w "%{http_code}" \
-      -H "Authorization: Bearer $TOKEN" \
-      -H "Content-Type: application/x-protobuf" \
-      http://localhost:4317 \
-      && echo " — collector reachable" \
-      || echo "collector unreachable (is the stack up?)"
+    set -e
+    echo -n "Caddy HTTPS (:443) ... "
+    if curl -sfo /dev/null https://aimonitor.local/api/health; then
+        echo "OK"
+    else
+        echo "FAIL (check: stack up? /etc/hosts? CA trusted via 'just trust-cert'?)"
+        exit 1
+    fi
+    echo -n "Caddy OTLP TLS handshake (:4317) ... "
+    if echo "" | openssl s_client -connect aimonitor.local:4317 -servername aimonitor.local -verify_return_error </dev/null >/dev/null 2>&1; then
+        echo "OK"
+    else
+        echo "FAIL (Caddy :4317 listener or TLS trust)"
+        exit 1
+    fi
 
 # Validate all config files without starting services
 validate:
-    docker compose config --quiet && echo "docker-compose.yml OK"
+    docker compose config --quiet && echo "docker-compose.yml (prod) OK"
+    docker compose -f docker-compose.yml -f docker-compose.local.yml config --quiet && echo "docker-compose.yml + override (local) OK"
     docker run --rm -v "$(pwd)/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro" \
         otel/opentelemetry-collector-contrib:0.100.0 validate \
         --config=/etc/otelcol-contrib/config.yaml \
