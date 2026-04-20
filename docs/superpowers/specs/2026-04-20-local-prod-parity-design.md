@@ -14,7 +14,7 @@ The four axes that differ between local and prod, and the resolution for each:
 | OTLP transport | Caddy-terminated TLS on `:4317` | **Same** — Caddy with `tls internal` on `:4317` |
 | Caddy TLS | Let's Encrypt for `VPS_DOMAIN` | `tls internal` (Caddy-signed) |
 | Grafana root URL | `https://monitor.example.com` | `https://aimonitor.local` |
-| Host port exposure | `:80 :443 :4317` public + Grafana on loopback `:3000` | Same + extra loopback debug ports, Grafana remapped to `:3001` |
+| Host port exposure | `:80 :443 :4317` public + Grafana on loopback `:3000` | Same + extra loopback debug ports (Grafana stays on `:3000`) |
 
 ## Goals
 
@@ -40,14 +40,14 @@ The four axes that differ between local and prod, and the resolution for each:
   - `grafana` binds `127.0.0.1:3000:3000` (loopback only) — for SSH-tunneled admin access on the VPS. Public access is via Caddy on `:443`.
 - **`docker-compose.local.yml`** (explicit override, loaded only via `just up`)
   - Swaps Caddy volume to `./caddy/Caddyfile.local`.
-  - Adds loopback host bindings (for direct debugging on the laptop):
-    - `grafana`: `127.0.0.1:3001:3000` (using `!override` so it replaces the base ports list, avoiding concatenation).
+  - Does **not** touch `grafana.ports` — Grafana uses the base binding `127.0.0.1:3000:3000` locally too. The user is responsible for keeping host port `3000` free on the laptop (kill any other local service on `:3000` before `just up`).
+  - Adds loopback host bindings for direct debugging (none of these exist in base):
     - `prometheus`: `127.0.0.1:9090:9090`
     - `loki`: `127.0.0.1:3100:3100`
     - `otel-collector`: `127.0.0.1:8888:8888`, `127.0.0.1:13133:13133`
   - Does **not** add a loopback binding for `otel-collector:4317`. Local OTLP traffic goes through Caddy on `aimonitor.local:4317` with TLS — exactly like prod.
 
-Note on the `!override` tag: Compose's default merge behavior for list-typed fields like `ports` is concatenation. Without `!override`, the override file would *add* `:3001:3000` rather than *replace* base's `:3000:3000`, leaving **both** bound locally (port 3000 is exactly the conflict we want to avoid). The local override uses `!override` on `grafana.ports` to force list replacement. Ports added only in the override — `prometheus`, `loki`, `otel-collector` debug ports — don't need `!override` since they have no base entry and concatenation with an empty list is a no-op.
+Because the override only *adds* port entries (never remaps Grafana), Compose's default list-concatenation behavior is fine and no `!override` YAML tag is needed.
 
 ### Caddy
 
@@ -126,11 +126,11 @@ Additions/edits (current recipes that stay: `setup`, `token`, `down`, `reset`, `
 
 | Recipe | Behavior |
 |---|---|
-| `just up` | Guard: aborts if `$VPS_DOMAIN` doesn't end in `.local` or `.test`. Then: `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d` (local is opt-in via the wrapper). The guard prevents accidentally running the local recipe on a VPS with a real domain, which would try `tls internal` on a public hostname. |
+| `just up` | Checks `$VPS_DOMAIN` ends in `.local` or `.test`; aborts with an error otherwise (prevents accidentally starting the local stack against the prod domain, which would try `tls internal` on a public name). Then: `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d`. |
 | `just up-prod` | `docker compose up -d` (prod default, no override file loaded) |
 | `just down` | `docker compose -f docker-compose.yml -f docker-compose.local.yml down` (works even when override hasn't been loaded) |
 | `just reload` | `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --force-recreate` |
-| `just open` | `open https://aimonitor.local` (replaces `http://localhost:3001`) |
+| `just open` | `open https://aimonitor.local` (replaces `http://localhost:3001`); Grafana is also directly reachable at `http://localhost:3000` via the loopback binding for quick UI work that doesn't need TLS |
 | `just hosts-check` | Greps `/etc/hosts` for `aimonitor.local` entry pointing at `127.0.0.1`; prints copy-paste instructions if missing. Called automatically from `just setup` as a non-fatal warning. |
 | `just trust-cert` | One-shot: ensures Caddy is up, `docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-local-root.crt`, runs `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ./caddy-local-root.crt` (sudo prompt), then prints the `NODE_EXTRA_CA_CERTS` env var snippet for the user to add to their shell profile. The extracted CA path (`./caddy-local-root.crt`) is stable so the env var doesn't break on re-runs. |
 | `just ping` | Replaced: `curl -sf -o /dev/null -w "%{http_code}" --resolve aimonitor.local:4317:127.0.0.1 https://aimonitor.local:4317 -H "Authorization: Bearer $OTEL_BEARER_TOKEN"` — verifies Caddy is routing and TLS handshake succeeds. (The `--resolve` flag makes the recipe portable even if `/etc/hosts` is misconfigured.) |
@@ -149,17 +149,17 @@ Added file `./caddy-local-root.crt` is gitignored.
 - `GET https://aimonitor.local/api/search?tag=claude-code` (authed) → dashboards.length == 4
 - New: TLS trust check — `curl -sf https://aimonitor.local/api/health` without `-k` must succeed. If it fails, the script prints "run `just trust-cert` first" and exits.
 - `TLS handshake on aimonitor.local:4317` — `openssl s_client -connect aimonitor.local:4317 -servername aimonitor.local` succeeds (collector reachability via Caddy).
-- Loopback debug endpoints (local-only, still useful for smoke): `http://localhost:9090/-/ready`, `http://localhost:3100/ready`, `http://localhost:13133/`, `http://localhost:8888/metrics`.
-- Keeps: Prometheus-is-scraping-collector check, but accessed via `http://localhost:9090` (loopback, present in local override).
+- Loopback debug endpoints (local-only, still useful for smoke): `http://localhost:3000/api/health` (Grafana direct, pre-TLS), `http://localhost:9090/-/ready`, `http://localhost:3100/ready`, `http://localhost:13133/`, `http://localhost:8888/metrics`.
+- Keeps: Prometheus-is-scraping-collector check, accessed via `http://localhost:9090` (loopback, present in local override).
 
 Kept from earlier local-dev changes: `((PASS++)) || true` fix (strict improvement unrelated to environment split).
 
 ## Revert plan (changes that conflict with this design)
 
-These four items from the earlier local-dev commits need to be reverted:
+These items from the earlier local-dev commits need to be reverted:
 
 1. **`caddy/Caddyfile`** — restore the `{$VPS_DOMAIN}:4317 { reverse_proxy h2c://otel-collector:4317 }` block.
-2. **`docker-compose.yml`** — remove `"127.0.0.1:4317:4317"` from `otel-collector.ports`; remove `"127.0.0.1:8888:8888"` and `"127.0.0.1:13133:13133"` (these move to the local override); remove `"127.0.0.1:9090:9090"` from Prometheus; remove `"127.0.0.1:3100:3100"` from Loki; change Grafana binding from `"127.0.0.1:3001:3000"` back to `"127.0.0.1:3000:3000"`.
+2. **`docker-compose.yml`** — remove `"127.0.0.1:4317:4317"`, `"127.0.0.1:8888:8888"`, and `"127.0.0.1:13133:13133"` from `otel-collector.ports` (8888/13133 move to the local override; 4317 goes away entirely — OTLP comes through Caddy); remove `"127.0.0.1:9090:9090"` from Prometheus; remove `"127.0.0.1:3100:3100"` from Loki; change Grafana binding from `"127.0.0.1:3001:3000"` back to `"127.0.0.1:3000:3000"`.
 3. Caddy's `ports` list must include `"4317:4317"` again.
 
 Kept from earlier local-dev changes (strict improvements, environment-agnostic):
@@ -172,10 +172,16 @@ Kept from earlier local-dev changes (strict improvements, environment-agnostic):
 1. `just setup` → creates `.env` with `VPS_DOMAIN=aimonitor.local`
 2. Add `127.0.0.1 aimonitor.local` to `/etc/hosts`; `just hosts-check` verifies.
 3. `just up` → stack starts with local override.
-4. `just trust-cert` → installs Caddy's local root CA into macOS keychain; prints `NODE_EXTRA_CA_CERTS` snippet.
-5. Add `export NODE_EXTRA_CA_CERTS=/absolute/path/to/caddy-local-root.crt` to `~/.zshrc` so Claude Code trusts the cert.
-6. `just smoke` → validates end-to-end.
-7. Configure Claude Code with `OTEL_EXPORTER_OTLP_ENDPOINT=https://aimonitor.local:4317`.
+4. `just trust-cert` → installs Caddy's local root CA into macOS keychain; prints the absolute path of `./caddy-local-root.crt` and the `NODE_EXTRA_CA_CERTS` snippet.
+5. **Verify Node trust.** Run:
+   ```bash
+   node -e "require('https').get('https://aimonitor.local/api/health', r => console.log(r.statusCode)).on('error', e => console.error('FAIL:', e.code))"
+   ```
+   If it prints `200`, Node already trusts the cert (e.g., via a future Node version that reads the system keychain) — skip step 6.
+   If it prints `FAIL: UNABLE_TO_VERIFY_LEAF_SIGNATURE` (or similar), proceed to step 6.
+6. Add `export NODE_EXTRA_CA_CERTS="$HOME/Developer/personal/aimonitor/caddy-local-root.crt"` to `~/.zshrc` (adjust path as needed); open a new shell. Re-run step 5 to confirm `200`.
+7. `just smoke` → validates end-to-end.
+8. Configure Claude Code shell env with `OTEL_EXPORTER_OTLP_ENDPOINT=https://aimonitor.local:4317`.
 
 **Laptop (daily):** `just up`, `just logs <svc>`, `just down`.
 
@@ -190,11 +196,11 @@ The `docker-compose.local.yml` file is committed to git; it's inert on the VPS b
 
 1. **`.local` TLD on macOS.** `.local` is reserved for mDNS (RFC 6762). macOS `/etc/hosts` lookups for `.local` generally work, but some Java-based tools and odd resolver paths may bypass `/etc/hosts` and query mDNS. **Mitigation:** if `aimonitor.local` resolution misbehaves, swap to `aimonitor.test` (RFC 2606 reserved, no mDNS handling). All recipes parameterize `VPS_DOMAIN`, so the switch is a `.env` edit only.
 
-2. **Node.js ignores the system keychain.** Confirmed via Claude Code's own docs: *"When running on the Node.js runtime, system CA store integration is not automatic. You may need to set the `NODE_EXTRA_CA_CERTS` environment variable to trust an enterprise root CA."* ([network-config](https://code.claude.com/docs/en/network-config)). Claude Code does **not** honor the OTEL-spec `OTEL_EXPORTER_OTLP_CERTIFICATE` env var — `NODE_EXTRA_CA_CERTS` is the only documented path. **Mitigation:** `just trust-cert` extracts the CA to a stable path (`./caddy-local-root.crt`) and prints the `NODE_EXTRA_CA_CERTS` snippet the user must add to their shell profile. Keychain trust still matters — it covers curl/browsers/Python/Go, including the smoke test's `curl https://aimonitor.local` checks.
+2. **Node.js ignores the system keychain.** Claude Code is Node-based. `security add-trusted-cert` covers macOS apps (browsers, curl, Python, Go) but Node uses its bundled `ca-certificates`. **Mitigation:** `just trust-cert` copies the CA to a stable path (`./caddy-local-root.crt`) and prints the `NODE_EXTRA_CA_CERTS` snippet the user must add to their shell profile. Smoke test flags missing Node trust indirectly via the TLS-handshake check (if the `just ping` recipe fails for Claude Code specifically, the user knows Node trust is missing even if curl works).
 
-3. **Compose `ports` concatenation footgun.** Without `!override`, the local file's Grafana ports would *add* to any base ports rather than replace. Design uses `!override` on `grafana.ports` explicitly. Unit-of-verification: `docker compose -f docker-compose.yml -f docker-compose.local.yml config` should show a single `127.0.0.1:3001:3000` entry, not both `:3000:3000` and `:3001:3000`.
+3. **Local port-3000 collisions.** Grafana binds the laptop's `127.0.0.1:3000:3000` locally. If another dev tool (Create React App, Rails, Next.js dev server) is already on `:3000`, `just up` fails. By design, the user manages this manually — `lsof -iTCP:3000 -sTCP:LISTEN` finds the offender, stop it before `just up`. We don't want to paper over this with different ports in local, because port parity with prod is a small but real benefit (any hardcoded `localhost:3000` path in notes/runbooks works in both places).
 
-4. **Accidentally using local override on VPS.** If someone on the VPS runs `just up` thinking it's the prod recipe, they'd try to start with `tls internal` on a public domain. **Mitigation:** `just up` has a hard guard — it reads `$VPS_DOMAIN` from `.env` and aborts with a clear error if it doesn't end in `.local` or `.test`. The VPS recipe is `just up-prod` (or `docker compose up -d`). Both safety nets together mean accidentally using the wrong recipe is caught early.
+4. **Accidentally using local recipes on VPS.** If someone on the VPS runs `just up` thinking it's the prod recipe, they'd try to start with `tls internal` on a public domain. **Mitigation:** `just up` includes a hard guard — reads `$VPS_DOMAIN` from `.env` and aborts unless it ends in `.local` or `.test`. Error message: "just up is for local dev only (VPS_DOMAIN must end in .local or .test). Use just up-prod on the VPS." `just up-prod` has the mirror guard: aborts if `$VPS_DOMAIN` *does* end in `.local`/`.test`.
 
 5. **Caddy internal CA rotation.** Caddy auto-rotates its internal CA. If the user has pinned the extracted cert via `NODE_EXTRA_CA_CERTS` and Caddy issues a new root, Node will start failing verification. **Mitigation:** `just trust-cert` is idempotent — rerun to refresh. Smoke test's TLS check catches stale trust.
 
