@@ -137,6 +137,11 @@ trust-cert:
     fi
     CA_SRC=/data/caddy/pki/authorities/local/root.crt
     CA_DST="$(pwd)/caddy-local-root.crt"
+    if ! docker compose -f docker-compose.yml -f docker-compose.local.yml exec -T caddy test -s "$CA_SRC"; then
+        echo "ERROR: Caddy has not generated its internal PKI yet."
+        echo "Try: curl -k https://aimonitor.local/api/health  (then rerun just trust-cert)"
+        exit 1
+    fi
     docker compose -f docker-compose.yml -f docker-compose.local.yml cp "caddy:$CA_SRC" "$CA_DST"
     if [ ! -s "$CA_DST" ]; then
         echo "ERROR: extracted CA file is empty. Has Caddy initialized its internal PKI yet?"
@@ -145,9 +150,11 @@ trust-cert:
     fi
     echo ""
     echo "Installing CA into macOS System keychain (sudo password required)..."
-    sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$CA_DST"
-    echo ""
-    echo "✓ Caddy local CA installed to system keychain."
+    if sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$CA_DST" 2>/dev/null; then
+        echo "✓ Caddy local CA installed to system keychain."
+    else
+        echo "ℹ CA already installed (or install skipped); continuing."
+    fi
     echo ""
     echo "Node.js does NOT use the macOS keychain. Add this to ~/.zshrc (or shell profile):"
     echo ""
