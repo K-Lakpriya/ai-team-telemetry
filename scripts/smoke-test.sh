@@ -59,8 +59,11 @@ check "Grafana health (direct :3000)" \
   "ok"
 
 # 3. OTLP Caddy :4317 TLS handshake
+# openssl on macOS does NOT read the system keychain, so we point it at the
+# extracted CA file that 'just trust-cert' writes to the repo root.
+CA_FILE="$(pwd)/caddy-local-root.crt"
 check "Caddy OTLP :4317 TLS handshake" \
-  "echo '' | openssl s_client -connect ${OTLP_HOST}:${OTLP_PORT} -servername ${OTLP_HOST} -verify_return_error </dev/null 2>&1" \
+  "openssl s_client -CAfile '${CA_FILE}' -connect ${OTLP_HOST}:${OTLP_PORT} -servername ${OTLP_HOST} -verify_return_error </dev/null 2>&1" \
   "Verify return code: 0"
 
 # 4. Prometheus ready
