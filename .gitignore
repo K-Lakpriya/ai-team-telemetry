@@ -5,3 +5,4 @@ loki/data/
 caddy/data/
 caddy/config/
 *.bak
+/caddy-local-root.crt
