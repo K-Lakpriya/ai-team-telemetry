@@ -126,7 +126,7 @@ Additions/edits (current recipes that stay: `setup`, `token`, `down`, `reset`, `
 
 | Recipe | Behavior |
 |---|---|
-| `just up` | `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d` (local is opt-in via the wrapper) |
+| `just up` | Guard: aborts if `$VPS_DOMAIN` doesn't end in `.local` or `.test`. Then: `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d` (local is opt-in via the wrapper). The guard prevents accidentally running the local recipe on a VPS with a real domain, which would try `tls internal` on a public hostname. |
 | `just up-prod` | `docker compose up -d` (prod default, no override file loaded) |
 | `just down` | `docker compose -f docker-compose.yml -f docker-compose.local.yml down` (works even when override hasn't been loaded) |
 | `just reload` | `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --force-recreate` |
@@ -190,11 +190,11 @@ The `docker-compose.local.yml` file is committed to git; it's inert on the VPS b
 
 1. **`.local` TLD on macOS.** `.local` is reserved for mDNS (RFC 6762). macOS `/etc/hosts` lookups for `.local` generally work, but some Java-based tools and odd resolver paths may bypass `/etc/hosts` and query mDNS. **Mitigation:** if `aimonitor.local` resolution misbehaves, swap to `aimonitor.test` (RFC 2606 reserved, no mDNS handling). All recipes parameterize `VPS_DOMAIN`, so the switch is a `.env` edit only.
 
-2. **Node.js ignores the system keychain.** Claude Code is Node-based. `security add-trusted-cert` covers macOS apps (browsers, curl, Python, Go) but Node uses its bundled `ca-certificates`. **Mitigation:** `just trust-cert` copies the CA to a stable path (`./caddy-local-root.crt`) and prints the `NODE_EXTRA_CA_CERTS` snippet the user must add to their shell profile. Smoke test flags missing Node trust indirectly via the TLS-handshake check (if the `just ping` recipe fails for Claude Code specifically, the user knows Node trust is missing even if curl works).
+2. **Node.js ignores the system keychain.** Confirmed via Claude Code's own docs: *"When running on the Node.js runtime, system CA store integration is not automatic. You may need to set the `NODE_EXTRA_CA_CERTS` environment variable to trust an enterprise root CA."* ([network-config](https://code.claude.com/docs/en/network-config)). Claude Code does **not** honor the OTEL-spec `OTEL_EXPORTER_OTLP_CERTIFICATE` env var — `NODE_EXTRA_CA_CERTS` is the only documented path. **Mitigation:** `just trust-cert` extracts the CA to a stable path (`./caddy-local-root.crt`) and prints the `NODE_EXTRA_CA_CERTS` snippet the user must add to their shell profile. Keychain trust still matters — it covers curl/browsers/Python/Go, including the smoke test's `curl https://aimonitor.local` checks.
 
 3. **Compose `ports` concatenation footgun.** Without `!override`, the local file's Grafana ports would *add* to any base ports rather than replace. Design uses `!override` on `grafana.ports` explicitly. Unit-of-verification: `docker compose -f docker-compose.yml -f docker-compose.local.yml config` should show a single `127.0.0.1:3001:3000` entry, not both `:3000:3000` and `:3001:3000`.
 
-4. **Accidentally using local override on VPS.** If someone on the VPS runs `just up` thinking it's the prod recipe, they'd try to start with `tls internal` on a public domain. **Mitigation:** `just up-prod` is the VPS recipe; `just up` is explicitly local. VPS runbooks should say "use `docker compose up -d` or `just up-prod`." Also consider a guard: `just up` checks `$VPS_DOMAIN` and aborts if it doesn't end in `.local` or `.test`.
+4. **Accidentally using local override on VPS.** If someone on the VPS runs `just up` thinking it's the prod recipe, they'd try to start with `tls internal` on a public domain. **Mitigation:** `just up` has a hard guard — it reads `$VPS_DOMAIN` from `.env` and aborts with a clear error if it doesn't end in `.local` or `.test`. The VPS recipe is `just up-prod` (or `docker compose up -d`). Both safety nets together mean accidentally using the wrong recipe is caught early.
 
 5. **Caddy internal CA rotation.** Caddy auto-rotates its internal CA. If the user has pinned the extracted cert via `NODE_EXTRA_CA_CERTS` and Caddy issues a new root, Node will start failing verification. **Mitigation:** `just trust-cert` is idempotent — rerun to refresh. Smoke test's TLS check catches stale trust.
 
