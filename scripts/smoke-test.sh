@@ -1,72 +1,103 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Local smoke test — assumes `just up` and `just trust-cert` have been run.
 
-# Smoke test: validates all services are healthy
-# Usage: ./scripts/smoke-test.sh
-# Requires: docker compose stack running, curl, jq, python3
+set -u
+PASS=0
+FAIL=0
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-PASS=0; FAIL=0
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+GRAFANA_HTTPS="https://aimonitor.local"
+GRAFANA_HTTP="http://localhost:3000"
+OTLP_HOST="aimonitor.local"
+OTLP_PORT="4317"
+GF_USER="admin"
+GF_PASS="${GF_SECURITY_ADMIN_PASSWORD:-admin}"
 
 check() {
-  local name="$1"; local cmd="$2"; local expected="$3"
+  local name="$1" cmd="$2" expected="$3"
   local result
   result=$(eval "$cmd" 2>&1) || true
-  if echo "$result" | grep -q "$expected"; then
+  if echo "$result" | grep -qE "$expected"; then
     echo -e "${GREEN}PASS${NC} $name"
-    ((PASS++))
+    ((PASS++)) || true
   else
     echo -e "${RED}FAIL${NC} $name (got: $result)"
-    ((FAIL++))
+    ((FAIL++)) || true
   fi
 }
 
-echo "=== AI Monitor Smoke Test ==="
+echo "=== Aimonitor Local Smoke Test ==="
 echo ""
 
-# 1. OTEL Collector health check
-check "OTEL Collector health" \
-  "curl -sf http://localhost:13133/" \
-  "Server available"
+# 0. TLS trust: curl without -k must succeed. This is the gate — if it fails,
+#    the rest of the HTTPS checks will fail for the same reason, so exit early
+#    with a helpful hint.
+echo -n "TLS trust check ... "
+if curl -sfo /dev/null "${GRAFANA_HTTPS}/api/health"; then
+  echo -e "${GREEN}OK${NC}"
+else
+  echo -e "${RED}FAIL${NC}"
+  echo ""
+  echo -e "${YELLOW}The macOS system keychain does not trust Caddy's local root CA.${NC}"
+  echo "Run 'just trust-cert' first, then retry."
+  exit 1
+fi
+echo ""
 
-# 2. Prometheus readiness
+# 1. Caddy-fronted Grafana health
+check "Grafana health (via Caddy HTTPS)" \
+  "curl -sf ${GRAFANA_HTTPS}/api/health" \
+  "ok"
+
+# 2. Grafana direct on loopback (debug access)
+check "Grafana health (direct :3000)" \
+  "curl -sf ${GRAFANA_HTTP}/api/health" \
+  "ok"
+
+# 3. OTLP Caddy :4317 TLS handshake
+check "Caddy OTLP :4317 TLS handshake" \
+  "echo '' | openssl s_client -connect ${OTLP_HOST}:${OTLP_PORT} -servername ${OTLP_HOST} -verify_return_error </dev/null 2>&1" \
+  "Verify return code: 0"
+
+# 4. Prometheus ready
 check "Prometheus ready" \
   "curl -sf http://localhost:9090/-/ready" \
   "Prometheus Server is Ready"
 
-# 3. Loki readiness
+# 5. Loki ready
 check "Loki ready" \
   "curl -sf http://localhost:3100/ready" \
   "ready"
 
-# 4. Grafana health
-check "Grafana health" \
-  "curl -sf http://localhost:3000/api/health" \
-  "ok"
+# 6. Collector health
+check "OTEL Collector health" \
+  "curl -sf http://localhost:13133/" \
+  "Server available"
 
-# 5. Prometheus can scrape otel-collector metrics
+# 7. Prometheus scrapes OTEL Collector self-metrics
 check "Prometheus scrapes OTEL Collector" \
-  "curl -sf 'http://localhost:9090/api/v1/query?query=up{job=\"otel-collector\"}' | python3 -c \"import sys,json; d=json.load(sys.stdin); r=d['data']['result']; print(r[0]['value'][1] if r else 'no_data')\"" \
+  "curl -sf 'http://localhost:9090/api/v1/query?query=up{job=\"otel-collector\"}' | python3 -c \"import sys,json; r=json.load(sys.stdin)['data']['result']; print(r[0]['value'][1] if r else 'no-data')\"" \
   "1"
 
-# 6. Grafana datasources provisioned
+# 8. Grafana datasources provisioned (via Caddy)
 check "Grafana Prometheus datasource" \
-  "curl -sf -u admin:${GF_SECURITY_ADMIN_PASSWORD:-admin} http://localhost:3000/api/datasources/name/Prometheus" \
+  "curl -sf -u ${GF_USER}:${GF_PASS} ${GRAFANA_HTTPS}/api/datasources/name/Prometheus" \
   "prometheus"
 
 check "Grafana Loki datasource" \
-  "curl -sf -u admin:${GF_SECURITY_ADMIN_PASSWORD:-admin} http://localhost:3000/api/datasources/name/Loki" \
+  "curl -sf -u ${GF_USER}:${GF_PASS} ${GRAFANA_HTTPS}/api/datasources/name/Loki" \
   "loki"
 
-# 7. Grafana dashboards provisioned
+# 9. Grafana dashboards provisioned
 check "Grafana dashboards loaded" \
-  "curl -sf -u admin:${GF_SECURITY_ADMIN_PASSWORD:-admin} 'http://localhost:3000/api/search?tag=claude-code' | python3 -c \"import sys,json; d=json.load(sys.stdin); print(len(d))\"" \
+  "curl -sf -u ${GF_USER}:${GF_PASS} '${GRAFANA_HTTPS}/api/search?tag=claude-code' | python3 -c \"import sys,json; d=json.load(sys.stdin); print(len(d))\"" \
   "4"
 
 echo ""
-echo "=== Results: ${PASS} passed, ${FAIL} failed ==="
-if [ "$FAIL" -gt 0 ]; then
-  echo -e "${YELLOW}Some checks failed. Check 'docker compose logs <service>' for details.${NC}"
-  exit 1
-fi
-echo -e "${GREEN}All checks passed.${NC}"
+echo "=================================="
+echo -e "Results: ${GREEN}${PASS} passed${NC}, ${RED}${FAIL} failed${NC}"
+[ "$FAIL" -eq 0 ] || exit 1
