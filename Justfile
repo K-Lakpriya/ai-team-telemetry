@@ -69,6 +69,19 @@ up-prod:
     esac
     docker compose up -d
 
+# Start the prod stack for AWS private-subnet deployments behind an ALB.
+up-prod-alb:
+    #!/usr/bin/env bash
+    set -e
+    case "${VPS_DOMAIN:-}" in
+        *.local|*.test|localhost)
+            echo "ERROR: just up-prod-alb refuses to run with VPS_DOMAIN='${VPS_DOMAIN}' (looks like a local domain)."
+            echo "Use 'just up' for local dev."
+            exit 1
+            ;;
+    esac
+    docker compose -f docker-compose.yml -f docker-compose.aws-alb.yml up -d
+
 # Stop all services (keeps volumes)
 down:
     docker compose -f docker-compose.yml -f docker-compose.local.yml down
@@ -101,6 +114,10 @@ pull:
 # Rebuild and restart (useful after config changes)
 reload:
     docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --force-recreate
+
+# Rebuild and restart the AWS ALB prod stack
+reload-prod-alb:
+    docker compose -f docker-compose.yml -f docker-compose.aws-alb.yml up -d --force-recreate
 
 # ── Observability ────────────────────────────────────────────────────────────
 
@@ -197,7 +214,8 @@ ping:
 validate:
     docker compose config --quiet && echo "docker-compose.yml (prod) OK"
     docker compose -f docker-compose.yml -f docker-compose.local.yml config --quiet && echo "docker-compose.yml + override (local) OK"
-    docker run --rm -v "$(pwd)/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro" \
-        otel/opentelemetry-collector-contrib:0.100.0 validate \
+    docker compose -f docker-compose.yml -f docker-compose.aws-alb.yml config --quiet && echo "docker-compose.yml + override (aws-alb) OK"
+    docker run --rm --env-file .env -v "$(pwd)/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+        otel/opentelemetry-collector-contrib:0.119.0 validate \
         --config=/etc/otelcol-contrib/config.yaml \
         && echo "otel-collector/config.yaml OK"
