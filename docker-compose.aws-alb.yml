@@ -1,0 +1,10 @@
+# AWS ALB prod override. Loaded only for the private-subnet deployment path.
+# It swaps Caddy into a backend-only config: Grafana on :80 and OTLP gRPC on
+# :4317. Public TLS is terminated by the ALB, not by Caddy.
+
+services:
+  caddy:
+    volumes:
+      - ./caddy/Caddyfile.alb:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
