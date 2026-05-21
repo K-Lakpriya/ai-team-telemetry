@@ -1,0 +1,8 @@
+:80 {
+    reverse_proxy grafana:3000
+}
+
+# ALB terminates public TLS on :4317 and forwards cleartext HTTP/2 to Caddy.
+:4317 {
+    reverse_proxy h2c://otel-collector:4317
+}
